@@ -379,7 +379,7 @@ def compute_middle_attn_vector(delta, delta_bias, A, B, C, L, x_shape, full_vect
                     for i in range(cls_pos - t):
                         currA = currA * dA[:, cls_pos - i, :, :]
                 currB = dB[:, t, :, :]
-                AttnVecorOverCLS[:, :, t, z] = torch.sum(curr_C * currA * currB, axis=-1)
+                AttnVecorOverCLS[:, :, z, t] = torch.sum(curr_C * currA * currB, axis=-1)
         return AttnVecorOverCLS
     else:
         dt = F.softplus(delta + delta_bias.unsqueeze(0).unsqueeze(-1))
