@@ -225,6 +225,14 @@ class MambaInnerFn(torch.autograd.Function):
         out, scan_intermediates, out_z = selective_scan_cuda.fwd(
             conv1d_out, delta, A, B, C, D, z, delta_bias, delta_softplus
         )
+
+        xai_vector = compute_middle_attn_vector(delta, delta_bias, A=A, B=B, C=C, L=L, x_shape=x.shape)
+
+        save_dict = {}
+        save_dict["z"] = z
+        save_dict["xai_vector"] = xai_vector
+        save_dict["conv1d_out"] = conv1d_out
+
         ctx.delta_softplus = delta_softplus
         ctx.out_proj_bias_is_None = out_proj_bias is None
         ctx.checkpoint_lvl = checkpoint_lvl
@@ -233,7 +241,7 @@ class MambaInnerFn(torch.autograd.Function):
         ctx.save_for_backward(xz, conv1d_weight, conv1d_bias, x_dbl, x_proj_weight,
                               delta_proj_weight, out_proj_weight, conv1d_out, delta,
                               A, B, C, D, delta_bias, scan_intermediates, out)
-        return F.linear(rearrange(out_z, "b d l -> b l d"), out_proj_weight, out_proj_bias)
+        return (F.linear(rearrange(out_z, "b d l -> b l d"), out_proj_weight, out_proj_bias), save_dict)
 
     @staticmethod
     @custom_bwd
@@ -355,3 +363,36 @@ def mamba_inner_ref(
             C = rearrange(C, "(b l) (dstate two) -> b dstate (l two)", l=L, two=2).contiguous()
     y = selective_scan_fn(x, delta, A, B, C, D, z=z, delta_bias=delta_bias, delta_softplus=True)
     return F.linear(rearrange(y, "b d l -> b l d"), out_proj_weight, out_proj_bias)
+
+def compute_middle_attn_vector(delta, delta_bias, A, B, C, L, x_shape, full_vector=True):
+    if full_vector:
+        dt = F.softplus(delta + delta_bias.unsqueeze(0).unsqueeze(-1))
+        dA = torch.exp(torch.einsum("bdl,dn->bldn", dt, A))  ### or dt@A!!
+        dB = torch.einsum("bdl,bnl->bldn", dt, B.squeeze(1))
+        AttnVecorOverCLS = torch.zeros((x_shape[0],x_shape[1],x_shape[2],x_shape[2])).to(dA.device)  # BHLL
+        for z in range(x_shape[-1]):
+            cls_pos = z
+            for t in range(cls_pos+1):
+                curr_C = C[:, :, :, cls_pos]
+                currA = torch.ones(dA.shape[0], dA.shape[2], dA.shape[3]).to(dA.device)
+                if t < (cls_pos):
+                    for i in range(cls_pos - t):
+                        currA = currA * dA[:, cls_pos - i, :, :]
+                currB = dB[:, t, :, :]
+                AttnVecorOverCLS[:, :, t, z] = torch.sum(curr_C * currA * currB, axis=-1)
+        return AttnVecorOverCLS
+    else:
+        dt = F.softplus(delta + delta_bias.unsqueeze(0).unsqueeze(-1))
+        dA = torch.exp(torch.einsum("bdl,dn->bldn", dt, A))  ### or dt@A!!
+        dB = torch.einsum("bdl,bnl->bldn", dt, B.squeeze(1))
+        AttnVecorOverCLS = torch.zeros(x_shape).to(dA.device)  # BHL: L vectors per batch and channel
+        cls_pos = x_shape[-1]
+        for t in range(cls_pos):
+            curr_C = C[:, :, :, cls_pos-1]
+            currA = torch.ones(dA.shape[0], dA.shape[2], dA.shape[3]).to(dA.device)
+            if t < (cls_pos - 1):
+                for i in range(cls_pos - 1 - t):
+                    currA = currA * dA[:, cls_pos - 1 - i, :, :]
+            currB = dB[:, t, :, :]
+            AttnVecorOverCLS[:, :, t] = torch.sum(curr_C * currA * currB, axis=-1)
+        return AttnVecorOverCLS
