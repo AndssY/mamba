@@ -164,7 +164,7 @@ class MambaInnerFn(torch.autograd.Function):
     def forward(ctx, xz, conv1d_weight, conv1d_bias, x_proj_weight, delta_proj_weight,
                 out_proj_weight, out_proj_bias,
                 A, B=None, C=None, D=None, delta_bias=None, B_proj_bias=None,
-                C_proj_bias=None, delta_softplus=True, checkpoint_lvl=1, compute_attn_matrix=False):
+                C_proj_bias=None, delta_softplus=True, checkpoint_lvl=1):
         """
              xz: (batch, dim, seqlen)
         """
@@ -226,6 +226,7 @@ class MambaInnerFn(torch.autograd.Function):
             conv1d_out, delta, A, B, C, D, z, delta_bias, delta_softplus
         )
         save_dict = {}
+        compute_attn_matrix=True
         if compute_attn_matrix:
             xai_matrix = compute_attn_matrix_fn(delta, delta_bias, A=A, B=B, C=C, L=L, x_shape=x.shape)
             save_dict["attention_matrix"] = xai_matrix
@@ -325,11 +326,11 @@ def mamba_inner_fn(
     xz, conv1d_weight, conv1d_bias, x_proj_weight, delta_proj_weight,
     out_proj_weight, out_proj_bias,
     A, B=None, C=None, D=None, delta_bias=None, B_proj_bias=None,
-    C_proj_bias=None, delta_softplus=True, compute_attn_matrix=False
+    C_proj_bias=None, delta_softplus=True
 ):
     return MambaInnerFn.apply(xz, conv1d_weight, conv1d_bias, x_proj_weight, delta_proj_weight,
                               out_proj_weight, out_proj_bias,
-                              A, B, C, D, delta_bias, B_proj_bias, C_proj_bias, delta_softplus, compute_attn_matrix)
+                              A, B, C, D, delta_bias, B_proj_bias, C_proj_bias, delta_softplus)
 
 
 def mamba_inner_ref(

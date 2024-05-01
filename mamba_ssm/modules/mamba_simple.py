@@ -50,7 +50,6 @@ class Mamba(nn.Module):
     ):
         factory_kwargs = {"device": device, "dtype": dtype}
         super().__init__()
-        self.compute_attn_matrix = False
         self.d_model = d_model
         self.d_state = d_state
         self.d_conv = d_conv
@@ -158,13 +157,10 @@ class Mamba(nn.Module):
                 self.D.float(),
                 delta_bias=self.dt_proj.bias.float(),
                 delta_softplus=True,
-                compute_attn_matrix = self.compute_attn_matrix
             )
-            if self.compute_attn_matrix:
-                self.attn_matrix = xai["attention_matrix"]
-            else:
-                xai_vector = xai["xai_vector"]
-                self.xai = xai_vector
+            self.attn_matrix = xai["attention_matrix"]
+            xai_vector = xai["xai_vector"]
+            self.xai = xai_vector
             # xai_vector = xai_a["xai_vector"]
             # self.xai_b = xai_vector
         else:
